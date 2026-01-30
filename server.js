@@ -1,12 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from the React app build directory
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // NSE session management - using axios instance with cookie jar
 let nseCookies = '';
@@ -466,6 +470,12 @@ app.post('/api/refresh-cookies', async (req, res) => {
 // Initialize cookies on startup
 refreshNSECookies().then(() => {
   console.log('Initial cookie refresh complete');
+});
+
+// IMPORTANT: The catch-all route MUST be after all other API routes
+// The "catchall" handler: for any request that doesn't match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Start server
