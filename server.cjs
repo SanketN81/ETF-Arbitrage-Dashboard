@@ -474,7 +474,8 @@ refreshNSECookies().then(() => {
 
 // IMPORTANT: The catch-all route MUST be after all other API routes
 // The "catchall" handler: for any request that doesn't match one above, send back React's index.html file.
-app.get('*', (req, res) => {
+// Express 5 requires named wildcards - using {*splat} syntax
+app.get('/{*splat}', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
