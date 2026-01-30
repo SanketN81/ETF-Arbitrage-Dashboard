@@ -1,12 +1,16 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
+const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from the React app build directory
+app.use(express.static(path.join(__dirname, 'dist')));
 
 // NSE session management - using axios instance with cookie jar
 let nseCookies = '';
@@ -72,7 +76,7 @@ async function refreshNSECookies() {
       timeout: 15000,
       maxRedirects: 5
     });
-    
+
     const cookies = response.headers['set-cookie'];
     if (cookies && cookies.length > 0) {
       nseCookies = cookies.map(c => c.split(';')[0]).join('; ');
@@ -89,12 +93,12 @@ async function refreshNSECookies() {
 // Get NSE headers with cookies
 async function getNSEHeaders(forceRefresh = false) {
   const now = Date.now();
-  
+
   // Refresh cookies if needed
   if (forceRefresh || !nseCookies || (now - lastCookieRefresh) > COOKIE_REFRESH_INTERVAL) {
     await refreshNSECookies();
   }
-  
+
   return {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
@@ -115,13 +119,13 @@ async function getNSEHeaders(forceRefresh = false) {
 // Fetch ETF data from NSE API with retry logic
 async function fetchNSEData(symbol, retryCount = 0) {
   const MAX_RETRIES = 2;
-  
+
   try {
     const headers = await getNSEHeaders(retryCount > 0);
     const url = `https://www.nseindia.com/api/quote-equity?symbol=${encodeURIComponent(symbol)}`;
-    
+
     console.log(`Fetching ${symbol} from NSE... (attempt ${retryCount + 1})`);
-    
+
     const response = await axios.get(url, {
       headers,
       timeout: 20000,
@@ -146,13 +150,13 @@ async function fetchNSEData(symbol, retryCount = 0) {
     return parseNSEResponse(symbol, response.data);
   } catch (error) {
     console.error(`Error fetching ${symbol}:`, error.message);
-    
+
     // Retry on network errors
     if (retryCount < MAX_RETRIES && (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT')) {
       console.log(`Network error for ${symbol}, retrying...`);
       return fetchNSEData(symbol, retryCount + 1);
     }
-    
+
     throw error;
   }
 }
@@ -165,7 +169,7 @@ function parseNSEResponse(symbol, data) {
   const priceInfo = data.priceInfo;
   const info = data.info || {};
   const securityInfo = data.securityInfo || {};
-  
+
   const result = {
     symbol: symbol,
     name: info.companyName || securityInfo.companyName || ETF_CONFIG[symbol]?.name || symbol,
@@ -197,21 +201,21 @@ function parseNSEResponse(symbol, data) {
 // Fetch Market Index data
 async function fetchIndexData(symbol, retryCount = 0) {
   const MAX_RETRIES = 2;
-  
+
   try {
     const headers = await getNSEHeaders(retryCount > 0);
     const config = INDICES_CONFIG[symbol];
-    
+
     // SENSEX requires BSE API which is different
     if (symbol === 'SENSEX') {
       // For now, we'll skip SENSEX as it requires BSE API
       throw new Error('SENSEX requires BSE API');
     }
-    
+
     const url = `https://www.nseindia.com/api/equity-stockIndices?index=${config.symbol}`;
-    
+
     console.log(`Fetching index ${symbol} from NSE...`);
-    
+
     const response = await axios.get(url, {
       headers,
       timeout: 20000,
@@ -242,7 +246,7 @@ async function fetchIndexData(symbol, retryCount = 0) {
         timestamp: new Date().toISOString()
       };
     }
-    
+
     throw new Error(`Invalid data structure from NSE for index ${symbol}`);
   } catch (error) {
     console.error(`Error fetching index ${symbol}:`, error.message);
@@ -266,10 +270,10 @@ app.get('/api/etfs', async (req, res) => {
     const batchSize = 5;
     for (let i = 0; i < symbols.length; i += batchSize) {
       const batch = symbols.slice(i, i + batchSize);
-      
+
       const batchPromises = batch.map(async (symbol) => {
         const now = Date.now();
-        
+
         // Check cache first
         if (cache.etfs[symbol] && (now - cache.timestamp[symbol]) < CACHE_DURATION) {
           return { success: true, data: cache.etfs[symbol] };
@@ -291,7 +295,7 @@ app.get('/api/etfs', async (req, res) => {
       });
 
       const batchResults = await Promise.all(batchPromises);
-      
+
       for (const result of batchResults) {
         if (result.success) {
           results.push(result.data);
@@ -299,7 +303,7 @@ app.get('/api/etfs', async (req, res) => {
           errors.push({ symbol: result.symbol, error: result.error });
         }
       }
-      
+
       // Small delay between batches to avoid rate limiting
       if (i + batchSize < symbols.length) {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -326,10 +330,10 @@ app.get('/api/etfs', async (req, res) => {
 app.get('/api/etfs/:symbol', async (req, res) => {
   const { symbol } = req.params;
   const upperSymbol = symbol.toUpperCase();
-  
+
   try {
     const now = Date.now();
-    
+
     // Check cache first
     if (cache.etfs[upperSymbol] && (now - cache.timestamp[upperSymbol]) < CACHE_DURATION) {
       return res.json({
@@ -349,7 +353,7 @@ app.get('/api/etfs/:symbol', async (req, res) => {
     });
   } catch (error) {
     console.error(`Error fetching ${upperSymbol}:`, error.message);
-    
+
     // Return cached data if available
     if (cache.etfs[upperSymbol]) {
       return res.json({
@@ -358,7 +362,7 @@ app.get('/api/etfs/:symbol', async (req, res) => {
         error: error.message
       });
     }
-    
+
     res.status(500).json({
       success: false,
       error: `Failed to fetch data for ${upperSymbol}: ${error.message}`
@@ -409,7 +413,7 @@ app.get('/api/config', (req, res) => {
 // Add new ETF to config
 app.post('/api/config', (req, res) => {
   const { symbol, name, assetType = 'Other' } = req.body;
-  
+
   if (!symbol || !name) {
     return res.status(400).json({
       success: false,
@@ -418,7 +422,7 @@ app.post('/api/config', (req, res) => {
   }
 
   const upperSymbol = symbol.toUpperCase();
-  
+
   ETF_CONFIG[upperSymbol] = {
     symbol: upperSymbol,
     name,
@@ -466,6 +470,12 @@ app.post('/api/refresh-cookies', async (req, res) => {
 // Initialize cookies on startup
 refreshNSECookies().then(() => {
   console.log('Initial cookie refresh complete');
+});
+
+// IMPORTANT: The catch-all route MUST be after all other API routes
+// The "catchall" handler: for any request that doesn't match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // Start server

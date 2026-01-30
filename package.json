@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server.cjs",
-    "start": "node server.js"
+    "start": "node server.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
